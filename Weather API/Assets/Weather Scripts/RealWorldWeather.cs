@@ -1,16 +1,22 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
+using TMPro;
 
 public class RealWorldWeather : MonoBehaviour
 {
-    public string apiKey = "YOUR-API-KEY-GOES-HERE";
+    public string apiKey = "API-KEY";
     public string city = "Paris";
     public float updateInterval = 600f;
     private float timer = 0f;
+
+    [Header("UI Elements")]
+    public TextMeshProUGUI currentWeatherText;
+    public TextMeshProUGUI forecastDay1Text;
+    public TextMeshProUGUI forecastDay2Text;
+    public TextMeshProUGUI forecastDay3Text;
 
     [System.Serializable]
     public class ForecastData
@@ -59,7 +65,7 @@ public class RealWorldWeather : MonoBehaviour
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
         {
             yield return webRequest.SendWebRequest();
-            
+
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
@@ -79,7 +85,7 @@ public class RealWorldWeather : MonoBehaviour
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
         {
             yield return webRequest.SendWebRequest();
-            
+
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
@@ -104,12 +110,15 @@ public class RealWorldWeather : MonoBehaviour
             float windSpeed = jsonObject["wind"]?["speed"]?.Value<float>() ?? 0f;
             float windDegrees = jsonObject["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-            Debug.Log($"\nCurrent Weather in {city}:");
-            Debug.Log($"Description: {description}");
-            Debug.Log($"Temperature: {tempCelsius:F1}°C");
-            Debug.Log($"Wind: {windSpeed:F1} m/s at {windDegrees:F1}°");
+            string windDirection = GetWindDirection(windDegrees);
 
-            // ✅ Now passing all four parameters correctly
+            // Display the current weather info in the UI, including the city name and wind direction
+            if (currentWeatherText)
+            {
+                currentWeatherText.text = $"City: {city}\nCurrent Weather:\n{description}\nTemp: {tempCelsius:F1}°C\nWind: {windSpeed:F1} m/s, {windDirection}";
+            }
+
+            // Update particle effects based on the weather description (current weather)
             FindFirstObjectByType<WeatherEffectsManager>()?.UpdateWeatherEffects(description, windSpeed, windDegrees, tempCelsius);
         }
         catch (Exception e)
@@ -118,24 +127,17 @@ public class RealWorldWeather : MonoBehaviour
         }
     }
 
-    // Parse and display the forecast data for the next 3 hours as debug text
+    // Parse and display the forecast data for the next 3 days
     void ParseForecastData(string json)
     {
         try
         {
             JObject jsonObject = JObject.Parse(json);
-            var forecastList = jsonObject["list"] as JArray;  // ✅ Ensure it's an array
+            var forecastList = jsonObject["list"];
 
-            if (forecastList == null || forecastList.Count == 0)
+            // Only get the forecast for the next 3 days
+            for (int i = 0; i < 3; i++)
             {
-                Debug.LogError("Forecast data is empty or invalid.");
-                return;
-            }
-
-            for (int i = 0; i < 3; i++) // Get the next 3 days' forecast
-            {
-                if (i >= forecastList.Count) break; // ✅ Prevent index out of range
-
                 var item = forecastList[i];
                 DateTime forecastTime = DateTime.Parse(item["dt_txt"]?.Value<string>());
                 string forecastDescription = item["weather"]?[0]?["description"]?.Value<string>();
@@ -143,14 +145,29 @@ public class RealWorldWeather : MonoBehaviour
                 float forecastWindSpeed = item["wind"]?["speed"]?.Value<float>() ?? 0f;
                 float forecastWindDegrees = item["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-                Debug.Log($"Forecast for {forecastTime}: {forecastDescription}, Temp: {forecastTemp}°C, Wind: {forecastWindSpeed}m/s at {forecastWindDegrees}°");
+                string windDirection = GetWindDirection(forecastWindDegrees);
 
-                FindFirstObjectByType<WeatherEffectsManager>()?.UpdateForecastUI(i + 1, forecastDescription, forecastWindSpeed, forecastTemp);
+                string forecastText = $"Day {i + 1}:\n{forecastDescription}\nTemp: {forecastTemp:F1}°C\nWind: {forecastWindSpeed:F1} m/s, {windDirection}";
+
+                // Update UI for each forecast day
+                if (i == 0 && forecastDay1Text) forecastDay1Text.text = forecastText;
+                if (i == 1 && forecastDay2Text) forecastDay2Text.text = forecastText;
+                if (i == 2 && forecastDay3Text) forecastDay3Text.text = forecastText;
             }
         }
         catch (Exception e)
         {
             Debug.LogError($"Error parsing forecast data: {e.Message}");
         }
+    }
+
+    // Convert wind degrees to cardinal directions (e.g., 0° = North, 90° = East)
+    string GetWindDirection(float degrees)
+    {
+        if (degrees >= 0 && degrees < 45) return "North";
+        if (degrees >= 45 && degrees < 135) return "East";
+        if (degrees >= 135 && degrees < 225) return "South";
+        if (degrees >= 225 && degrees < 315) return "West";
+        return "North"; // Default case
     }
 }

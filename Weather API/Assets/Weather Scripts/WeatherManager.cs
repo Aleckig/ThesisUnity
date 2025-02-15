@@ -27,12 +27,6 @@ public class WeatherEffectsManager : MonoBehaviour
     [Range(0f, 100f)] public float brokenCloudsEmission = 60f;
     [Range(0f, 100f)] public float overcastCloudsEmission = 80f;
 
-    [Header("UI Elements")]
-    public TextMeshProUGUI currentWeatherText;
-    public TextMeshProUGUI forecastDay1Text;
-    public TextMeshProUGUI forecastDay2Text;
-    public TextMeshProUGUI forecastDay3Text;
-
     private ParticleSystem.EmissionModule rainEmission;
     private ParticleSystem.EmissionModule snowEmission;
     private ParticleSystem.EmissionModule cloudEmission;
@@ -68,6 +62,7 @@ public class WeatherEffectsManager : MonoBehaviour
         DisableAllWeatherEffects();
     }
 
+    // Update the weather effects based on weather description, wind speed, direction, and temperature
     public void UpdateWeatherEffects(string weatherDescription, float windSpeed, float windDegrees, float temperature)
     {
         DisableAllWeatherEffects();
@@ -104,10 +99,9 @@ public class WeatherEffectsManager : MonoBehaviour
         }
 
         EnableWind(windSpeed, windDirection);
-
-        UpdateCurrentWeatherUI(weatherDescription, windSpeed, windDegrees, temperature);
     }
 
+    // Helper methods to determine intensity based on description
     float GetRainIntensity(string description)
     {
         if (description.Contains("light") || description.Contains("drizzle"))
@@ -143,7 +137,8 @@ public class WeatherEffectsManager : MonoBehaviour
         else
             return scatteredCloudsEmission;
     }
-    
+
+    // Enable rain particle system based on intensity, wind speed, and direction
     void EnableRain(float intensity, float windSpeed, Vector3 windDirection)
     {
         if (rainParticles)
@@ -155,6 +150,7 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
     
+    // Enable snow particle system based on intensity, wind speed, and direction
     void EnableSnow(float intensity, float windSpeed, Vector3 windDirection)
     {
         if (snowParticles)
@@ -166,6 +162,7 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
     
+    // Enable cloud particle system based on intensity, wind speed, and direction
     void EnableClouds(float intensity, float windSpeed, Vector3 windDirection)
     {
         if (cloudParticles && intensity > 0)
@@ -177,6 +174,7 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
 
+    // Enable thunder particle system
     void EnableThunder()
     {
         if (thunderParticles)
@@ -185,6 +183,7 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
     
+    // Enable fog particle system
     void EnableFog()
     {
         if (fogParticles)
@@ -193,6 +192,7 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
 
+    // Enable wind particle system based on wind speed and direction
     void EnableWind(float windSpeed, Vector3 windDirection)
     {
         if (windParticles)
@@ -203,7 +203,8 @@ public class WeatherEffectsManager : MonoBehaviour
             windParticles.transform.rotation = Quaternion.LookRotation(windDirection);
         }
     }
-    
+
+    // Disable all weather particle systems
     void DisableAllWeatherEffects()
     {
         if (rainParticles) rainParticles.gameObject.SetActive(false);
@@ -212,24 +213,5 @@ public class WeatherEffectsManager : MonoBehaviour
         if (fogParticles) fogParticles.gameObject.SetActive(false);
         if (thunderParticles) thunderParticles.gameObject.SetActive(false);
         if (windParticles) windParticles.gameObject.SetActive(false);
-    }
-
-    public void UpdateCurrentWeatherUI(string description, float windSpeed, float windDegrees, float temperature)
-    {
-        if (currentWeatherText)
-        {
-            currentWeatherText.text = $"Current Weather:\n{description}\nTemp: {temperature:F1}°C\nWind: {windSpeed:F1} m/s at {windDegrees:F1}°";
-        }
-    }
-
-    public void UpdateForecastUI(int dayOffset, string weatherDescription, float windSpeed, float temperature)
-    {
-        string forecastText = $"Day {dayOffset}:\n {weatherDescription}\nTemp: {temperature:F1}°C\nWind: {windSpeed:F1}m/s";
-        switch (dayOffset)
-        {
-            case 1: if (forecastDay1Text) forecastDay1Text.text = forecastText; break;
-            case 2: if (forecastDay2Text) forecastDay2Text.text = forecastText; break;
-            case 3: if (forecastDay3Text) forecastDay3Text.text = forecastText; break;
-        }
     }
 }
