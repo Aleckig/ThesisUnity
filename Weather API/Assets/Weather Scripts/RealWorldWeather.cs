@@ -104,14 +104,13 @@ public class RealWorldWeather : MonoBehaviour
             float windSpeed = jsonObject["wind"]?["speed"]?.Value<float>() ?? 0f;
             float windDegrees = jsonObject["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-            // Display the current weather info in the console
             Debug.Log($"\nCurrent Weather in {city}:");
             Debug.Log($"Description: {description}");
             Debug.Log($"Temperature: {tempCelsius:F1}°C");
             Debug.Log($"Wind: {windSpeed:F1} m/s at {windDegrees:F1}°");
 
-            // Update particle effects based on the weather description (current weather)
-            FindFirstObjectByType<WeatherEffectsManager>()?.UpdateWeatherEffects(description, windSpeed, windDegrees);
+            // ✅ Now passing all four parameters correctly
+            FindFirstObjectByType<WeatherEffectsManager>()?.UpdateWeatherEffects(description, windSpeed, windDegrees, tempCelsius);
         }
         catch (Exception e)
         {
@@ -125,11 +124,18 @@ public class RealWorldWeather : MonoBehaviour
         try
         {
             JObject jsonObject = JObject.Parse(json);
-            var forecastList = jsonObject["list"];
+            var forecastList = jsonObject["list"] as JArray;  // ✅ Ensure it's an array
 
-            // Only get the first 3 forecast entries (next 3 hours)
-            for (int i = 0; i < 3; i++)
+            if (forecastList == null || forecastList.Count == 0)
             {
+                Debug.LogError("Forecast data is empty or invalid.");
+                return;
+            }
+
+            for (int i = 0; i < 3; i++) // Get the next 3 days' forecast
+            {
+                if (i >= forecastList.Count) break; // ✅ Prevent index out of range
+
                 var item = forecastList[i];
                 DateTime forecastTime = DateTime.Parse(item["dt_txt"]?.Value<string>());
                 string forecastDescription = item["weather"]?[0]?["description"]?.Value<string>();
@@ -137,11 +143,9 @@ public class RealWorldWeather : MonoBehaviour
                 float forecastWindSpeed = item["wind"]?["speed"]?.Value<float>() ?? 0f;
                 float forecastWindDegrees = item["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-                // Log the forecast data to the console for the next 3 hours
-                Debug.Log($"Forecast for {forecastTime}:");
-                Debug.Log($"Description: {forecastDescription}");
-                Debug.Log($"Temperature: {forecastTemp:F1}°C");
-                Debug.Log($"Wind: {forecastWindSpeed:F1} m/s at {forecastWindDegrees:F1}°");
+                Debug.Log($"Forecast for {forecastTime}: {forecastDescription}, Temp: {forecastTemp}°C, Wind: {forecastWindSpeed}m/s at {forecastWindDegrees}°");
+
+                FindFirstObjectByType<WeatherEffectsManager>()?.UpdateForecastUI(i + 1, forecastDescription, forecastWindSpeed, forecastTemp);
             }
         }
         catch (Exception e)
