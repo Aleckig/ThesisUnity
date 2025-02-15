@@ -9,7 +9,7 @@ public class RealWorldWeather : MonoBehaviour
 {
     public string apiKey = "YOUR-API-KEY-GOES-HERE";
     public string city = "Paris";
-    public float updateInterval = 600f; // Time in seconds (600 = 10 minutes)
+    public float updateInterval = 600f;
     private float timer = 0f;
 
     [System.Serializable]
@@ -24,7 +24,6 @@ public class RealWorldWeather : MonoBehaviour
 
     void Start()
     {
-        // Initial weather requests
         GetRealWeather();
         GetForecast();
     }
@@ -40,24 +39,27 @@ public class RealWorldWeather : MonoBehaviour
         }
     }
 
+    // Fetch the real-time weather data
     public void GetRealWeather()
     {
-        string uri = $"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={apiKey}";
+        string uri = $"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={apiKey}&units=metric&lang=en";
         StartCoroutine(GetWeatherCoroutine(uri));
     }
 
+    // Fetch the forecast data
     public void GetForecast()
     {
-        string uri = $"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={apiKey}";
+        string uri = $"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={apiKey}&units=metric&lang=en";
         StartCoroutine(GetForecastCoroutine(uri));
     }
 
+    // Coroutine to get the current weather
     IEnumerator GetWeatherCoroutine(string uri)
     {
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
         {
             yield return webRequest.SendWebRequest();
-           
+            
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
@@ -65,17 +67,19 @@ public class RealWorldWeather : MonoBehaviour
             }
             else
             {
-                ParseCurrentWeather(webRequest.downloadHandler.text);
+                Debug.Log($"Weather API Response: {webRequest.downloadHandler.text}");
+                ParseCurrentWeather(webRequest.downloadHandler.text); // Handle current weather response
             }
         }
     }
 
+    // Coroutine to get the weather forecast
     IEnumerator GetForecastCoroutine(string uri)
     {
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
         {
             yield return webRequest.SendWebRequest();
-           
+            
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
@@ -83,81 +87,61 @@ public class RealWorldWeather : MonoBehaviour
             }
             else
             {
-                ParseForecast(webRequest.downloadHandler.text);
+                Debug.Log($"Forecast API Response: {webRequest.downloadHandler.text}");
+                ParseForecastData(webRequest.downloadHandler.text); // Handle forecast response
             }
         }
     }
 
-    string GetWindDirection(float degrees)
-    {
-        string[] directions = { "N", "NE", "E", "SE", "S", "SW", "W", "NW", "N" };
-        int index = Mathf.RoundToInt(degrees / 45f);
-        return directions[index % 8];
-    }
-
+    // Parse the current weather data and update particle effects
     void ParseCurrentWeather(string json)
     {
         try
         {
             JObject jsonObject = JObject.Parse(json);
-           
             string description = jsonObject["weather"]?[0]?["description"]?.Value<string>();
-            float tempKelvin = jsonObject["main"]?["temp"]?.Value<float>() ?? 0f;
+            float tempCelsius = jsonObject["main"]?["temp"]?.Value<float>() ?? 0f;
             float windSpeed = jsonObject["wind"]?["speed"]?.Value<float>() ?? 0f;
             float windDegrees = jsonObject["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-            float tempCelsius = tempKelvin - 273.15f;
-            float tempFahrenheit = tempCelsius * 9f/5f + 32f;
-            string windDirection = GetWindDirection(windDegrees);
-
+            // Display the current weather info in the console
             Debug.Log($"\nCurrent Weather in {city}:");
             Debug.Log($"Description: {description}");
-            Debug.Log($"Temperature: {tempCelsius:F1}°C ({tempFahrenheit:F1}°F)");
-            Debug.Log($"Wind: {windSpeed:F1} m/s from {windDirection} ({windDegrees:F1}°)");
+            Debug.Log($"Temperature: {tempCelsius:F1}°C");
+            Debug.Log($"Wind: {windSpeed:F1} m/s at {windDegrees:F1}°");
+
+            // Update particle effects based on the weather description (current weather)
+            FindFirstObjectByType<WeatherEffectsManager>()?.UpdateWeatherEffects(description, windSpeed, windDegrees);
         }
         catch (Exception e)
         {
-            Debug.LogError($"Error parsing current weather data: {e.Message}");
+            Debug.LogError($"Error parsing weather data: {e.Message}");
         }
     }
 
-    void ParseForecast(string json)
+    // Parse and display the forecast data for the next 3 hours as debug text
+    void ParseForecastData(string json)
     {
         try
         {
             JObject jsonObject = JObject.Parse(json);
             var forecastList = jsonObject["list"];
-            List<ForecastData> forecasts = new List<ForecastData>();
 
-            Debug.Log($"\nForecast for {city}:");
-            
-            // Get next 4 forecasts (12 hours ahead in 3-hour steps)
-            for (int i = 0; i < 4; i++)
+            // Only get the first 3 forecast entries (next 3 hours)
+            for (int i = 0; i < 3; i++)
             {
-                if (forecastList?[i] != null)
-                {
-                    var forecast = forecastList[i];
-                    
-                    // Parse timestamp
-                    long timestamp = forecast["dt"]?.Value<long>() ?? 0;
-                    DateTime forecastTime = DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime.ToLocalTime();
-                    
-                    // Parse weather data
-                    float tempKelvin = forecast["main"]?["temp"]?.Value<float>() ?? 0f;
-                    float windSpeed = forecast["wind"]?["speed"]?.Value<float>() ?? 0f;
-                    float windDegrees = forecast["wind"]?["deg"]?.Value<float>() ?? 0f;
-                    string description = forecast["weather"]?[0]?["description"]?.Value<string>();
-                    
-                    // Convert temperature
-                    float tempCelsius = tempKelvin - 273.15f;
-                    float tempFahrenheit = tempCelsius * 9f/5f + 32f;
-                    string windDirection = GetWindDirection(windDegrees);
+                var item = forecastList[i];
+                DateTime forecastTime = DateTime.Parse(item["dt_txt"]?.Value<string>());
+                string forecastDescription = item["weather"]?[0]?["description"]?.Value<string>();
+                float forecastTemp = item["main"]?["temp"]?.Value<float>() ?? 0f;
+                float forecastWindSpeed = item["wind"]?["speed"]?.Value<float>() ?? 0f;
+                float forecastWindDegrees = item["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-                    Debug.Log($"\nTime: {forecastTime:HH:mm, dd MMM}");
-                    Debug.Log($"Description: {description}");
-                    Debug.Log($"Temperature: {tempCelsius:F1}°C ({tempFahrenheit:F1}°F)");
-                    Debug.Log($"Wind: {windSpeed:F1} m/s from {windDirection} ({windDegrees:F1}°)");
-                }
+                // Log the forecast data to the console for the next 3 hours
+                Debug.Log($"Forecast for {forecastTime}:");
+                Debug.Log($"Description: {forecastDescription}");
+                Debug.Log($"Temperature: {forecastTemp:F1}°C");
+                Debug.Log($"Wind: {forecastWindSpeed:F1} m/s at {forecastWindDegrees:F1}°");
             }
         }
         catch (Exception e)
