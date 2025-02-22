@@ -99,6 +99,7 @@ public class RealWorldWeather : MonoBehaviour
         }
     }
 
+
     // Parse the current weather data and update particle effects
     void ParseCurrentWeather(string json)
     {
@@ -106,6 +107,7 @@ public class RealWorldWeather : MonoBehaviour
         {
             JObject jsonObject = JObject.Parse(json);
             string description = jsonObject["weather"]?[0]?["description"]?.Value<string>();
+            string iconCode = jsonObject["weather"]?[0]?["icon"]?.Value<string>();  // Get icon code
             float tempCelsius = jsonObject["main"]?["temp"]?.Value<float>() ?? 0f;
             float windSpeed = jsonObject["wind"]?["speed"]?.Value<float>() ?? 0f;
             float windDegrees = jsonObject["wind"]?["deg"]?.Value<float>() ?? 0f;
@@ -118,8 +120,12 @@ public class RealWorldWeather : MonoBehaviour
                 currentWeatherText.text = $"City: {city}\nCurrent Weather:\n{description}\nTemp: {tempCelsius:F1}°C\nWind: {windSpeed:F1} m/s, {windDirection}";
             }
 
-            // Update particle effects based on the weather description (current weather)
-            FindFirstObjectByType<WeatherEffectsManager>()?.UpdateWeatherEffects(description, windSpeed, windDegrees, tempCelsius);
+            // ONLY pass the necessary info to the WeatherEffectsManager to handle particle effects and icon
+            WeatherEffectsManager weatherEffectsManager = FindFirstObjectByType<WeatherEffectsManager>();
+            if (weatherEffectsManager != null)
+            {
+                weatherEffectsManager.UpdateWeatherEffects(description, windSpeed, windDegrees, tempCelsius);  // Update weather effects (including the icon) in WeatherEffectsManager
+            }
         }
         catch (Exception e)
         {
@@ -127,39 +133,81 @@ public class RealWorldWeather : MonoBehaviour
         }
     }
 
-    // Parse and display the forecast data for the next 3 days
-    void ParseForecastData(string json)
+        // Parse and display the forecast data for the next 3 days
+        void ParseForecastData(string json)
     {
         try
         {
             JObject jsonObject = JObject.Parse(json);
             var forecastList = jsonObject["list"];
 
-            // Only get the forecast for the next 3 days
-            for (int i = 0; i < 3; i++)
+            if (forecastList == null)
             {
-                var item = forecastList[i];
+                Debug.LogError("⚠️ No 'list' field found in forecast JSON!");
+                return;
+            }
+
+            int forecastDaysFound = 0;
+            WeatherEffectsManager weatherEffectsManager = FindFirstObjectByType<WeatherEffectsManager>();
+
+            foreach (var item in forecastList)
+            {
                 DateTime forecastTime = DateTime.Parse(item["dt_txt"]?.Value<string>());
-                string forecastDescription = item["weather"]?[0]?["description"]?.Value<string>();
-                float forecastTemp = item["main"]?["temp"]?.Value<float>() ?? 0f;
-                float forecastWindSpeed = item["wind"]?["speed"]?.Value<float>() ?? 0f;
-                float forecastWindDegrees = item["wind"]?["deg"]?.Value<float>() ?? 0f;
+                
+                // Pick forecasts at 12:00 PM for accuracy
+                if (forecastTime.Hour == 12)
+                {
+                    string forecastDescription = item["weather"]?[0]?["description"]?.Value<string>();
+                    float forecastTemp = item["main"]?["temp"]?.Value<float>() ?? 0f;
+                    float forecastWindSpeed = item["wind"]?["speed"]?.Value<float>() ?? 0f;
+                    float forecastWindDegrees = item["wind"]?["deg"]?.Value<float>() ?? 0f;
 
-                string windDirection = GetWindDirection(forecastWindDegrees);
+                    string windDirection = GetWindDirection(forecastWindDegrees);
+                    string forecastText = $"Day {forecastDaysFound + 1}:\n{forecastDescription}\nTemp: {forecastTemp:F1}°C\nWind: {forecastWindSpeed:F1} m/s, {windDirection}";
 
-                string forecastText = $"Day {i + 1}:\n{forecastDescription}\nTemp: {forecastTemp:F1}°C\nWind: {forecastWindSpeed:F1} m/s, {windDirection}";
+                    // Update UI text
+                    switch (forecastDaysFound)
+                    {
+                        case 0:
+                            if (forecastDay1Text) forecastDay1Text.text = forecastText;
+                            break;
+                        case 1:
+                            if (forecastDay2Text) forecastDay2Text.text = forecastText;
+                            break;
+                        case 2:
+                            if (forecastDay3Text) forecastDay3Text.text = forecastText;
+                            break;
+                    }
 
-                // Update UI for each forecast day
-                if (i == 0 && forecastDay1Text) forecastDay1Text.text = forecastText;
-                if (i == 1 && forecastDay2Text) forecastDay2Text.text = forecastText;
-                if (i == 2 && forecastDay3Text) forecastDay3Text.text = forecastText;
+                    // Update weather icons for forecast
+                    if (weatherEffectsManager != null)
+                    {
+                        weatherEffectsManager.UpdateWeatherEffects(
+                            forecastDescription,
+                            forecastWindSpeed,
+                            forecastWindDegrees,
+                            forecastTemp,
+                            true,  // isForecast = true
+                            forecastDaysFound + 1  // forecastDay (1-based)
+                        );
+                    }
+
+                    forecastDaysFound++;
+                    if (forecastDaysFound >= 3) break;
+                }
+            }
+
+            if (forecastDaysFound == 0)
+            {
+                Debug.LogError("⚠️ No valid forecast entries found at 12:00 PM.");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"Error parsing forecast data: {e.Message}");
+            Debug.LogError($"❌ Error parsing forecast data: {e.Message}");
         }
     }
+    
 
     // Convert wind degrees to cardinal directions (e.g., 0° = North, 90° = East)
     string GetWindDirection(float degrees)

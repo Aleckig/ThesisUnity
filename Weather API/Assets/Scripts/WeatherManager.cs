@@ -24,6 +24,7 @@ public class WeatherEffectsManager : MonoBehaviour
     [SerializeField] private Texture2D rainIcon;
     [SerializeField] private Texture2D snowIcon;
     [SerializeField] private Texture2D thunderIcon;
+    [SerializeField] private Texture2D fogIcon;
 
     [Header("Rain Intensity Settings")]
     [Range(0f, 1000f)] public float lightRainEmission = 100f;
@@ -41,50 +42,15 @@ public class WeatherEffectsManager : MonoBehaviour
     [Range(0f, 100f)] public float brokenCloudsEmission = 60f;
     [Range(0f, 100f)] public float overcastCloudsEmission = 80f;
 
-    private ParticleSystem.EmissionModule rainEmission;
-    private ParticleSystem.EmissionModule snowEmission;
-    private ParticleSystem.EmissionModule cloudEmission;
-    private ParticleSystem.EmissionModule windEmission;
-    private ParticleSystem.MainModule rainMain;
-    private ParticleSystem.MainModule snowMain;
-    private ParticleSystem.MainModule cloudMain;
-    private ParticleSystem.MainModule windMain;
-
-    void Start()
+    private void Start()
     {
-        InitializeParticleSystems();
         ValidateIconReferences();
         DisableAllWeatherEffects();
     }
 
-    private void InitializeParticleSystems()
-    {
-        if (rainParticles)
-        {
-            rainMain = rainParticles.main;
-            rainEmission = rainParticles.emission;
-        }
-        if (snowParticles)
-        {
-            snowMain = snowParticles.main;
-            snowEmission = snowParticles.emission;
-        }
-        if (cloudParticles)
-        {
-            cloudMain = cloudParticles.main;
-            cloudEmission = cloudParticles.emission;
-        }
-        if (windParticles)
-        {
-            windMain = windParticles.main;
-            windEmission = windParticles.emission;
-        }
-    }
-    
-
     private void ValidateIconReferences()
     {
-        if (!sunIcon || !cloudIcon || !rainIcon || !snowIcon || !thunderIcon)
+        if (!sunIcon || !cloudIcon || !rainIcon || !snowIcon || !thunderIcon || !fogIcon)
         {
             Debug.LogWarning("Some weather textures are missing. Please assign them in the Inspector.");
         }
@@ -92,114 +58,84 @@ public class WeatherEffectsManager : MonoBehaviour
 
     public void UpdateWeatherEffects(string weatherDescription, float windSpeed, float windDegrees, float temperature, bool isForecast = false, int forecastDay = 0)
     {
-        DisableAllWeatherEffects();
+        // Convert meteorological wind degrees to Unity direction
+        // Meteorological wind degrees: 0/360° = North (wind FROM North), 90° = East, 180° = South, 270° = West
+        // We need to:
+        // 1. Add 180° to get the direction the wind is blowing TOWARDS
+        // 2. Convert to Unity's coordinate system
+        float unityWindDegrees = (windDegrees + 180f) % 360f;
+        Vector3 windDirection = Quaternion.Euler(0, -unityWindDegrees, 0) * Vector3.forward;
         
-        Vector3 windDirection = Quaternion.Euler(0, windDegrees, 0) * Vector3.forward;
         weatherDescription = weatherDescription.ToLower();
 
+        // Set the weather icon for either current weather or forecast
         SetWeatherIcon(weatherDescription, isForecast, forecastDay);
 
-        if (weatherDescription.Contains("rain") || weatherDescription.Contains("drizzle"))
+        // Only apply particle effects for current weather (not forecast)
+        if (!isForecast)
         {
-            float rainIntensity = GetRainIntensity(weatherDescription);
-            EnableRain(rainIntensity, windSpeed, windDirection);
-        }
-        
-        if (weatherDescription.Contains("snow"))
-        {
-            float snowIntensity = GetSnowIntensity(weatherDescription);
-            EnableSnow(snowIntensity, windSpeed, windDirection);
-        }
-        
-        if (weatherDescription.Contains("cloud") || weatherDescription.Contains("clear"))
-        {
-            float cloudIntensity = GetCloudIntensity(weatherDescription);
-            EnableClouds(cloudIntensity, windSpeed, windDirection);
-        }
-        
-        if (weatherDescription.Contains("thunderstorm"))
-        {
-            EnableThunder();
-        }
-        
-        if (weatherDescription.Contains("fog") || weatherDescription.Contains("mist") || weatherDescription.Contains("haze"))
-        {
-            EnableFog();
-        }
+            DisableAllWeatherEffects();
 
-        EnableWind(windSpeed, windDirection);
+            // Prioritize snow first before rain or cloud
+            if (weatherDescription.Contains("snow"))
+            {
+                EnableSnow(GetSnowIntensity(weatherDescription), windSpeed, windDirection);
+            }
+            // Then check if rain is in the description
+            else if (weatherDescription.Contains("rain") || weatherDescription.Contains("drizzle"))
+            {
+                EnableRain(GetRainIntensity(weatherDescription), windSpeed, windDirection);
+            }
+            // Only enable cloud particles if no snow or rain is active
+            else if (weatherDescription.Contains("cloud") || weatherDescription.Contains("clear"))
+            {
+                EnableClouds(GetCloudIntensity(weatherDescription), windSpeed, windDirection);
+            }
+
+            // Check for thunderstorm
+            if (weatherDescription.Contains("thunderstorm"))
+                EnableThunder();
+
+            // Check for fog conditions
+            if (weatherDescription.Contains("fog") || weatherDescription.Contains("mist") || weatherDescription.Contains("haze"))
+                EnableFog();
+
+            // Enable wind effects
+            EnableWind(windSpeed, windDirection);
+        }
     }
 
-   private void SetWeatherIcon(string weatherDescription, bool isForecast, int forecastDay)
+    private void SetWeatherIcon(string weatherDescription, bool isForecast, int forecastDay)
     {
-        // Select the correct texture
-        Texture2D selectedTexture = null;
-        if (weatherDescription.Contains("clear"))
-            selectedTexture = sunIcon;
-        else if (weatherDescription.Contains("cloud"))
-            selectedTexture = cloudIcon;
-        else if (weatherDescription.Contains("rain") || weatherDescription.Contains("drizzle"))
-            selectedTexture = rainIcon;
-        else if (weatherDescription.Contains("snow"))
-            selectedTexture = snowIcon;
-        else if (weatherDescription.Contains("thunderstorm"))
-            selectedTexture = thunderIcon;
+        Texture2D selectedTexture = DetermineWeatherTexture(weatherDescription);
 
         if (selectedTexture == null)
         {
-            Debug.LogError($"❌ No texture found for weather: {weatherDescription}");
+            Debug.LogWarning($"No texture found for weather: {weatherDescription}");
             return;
         }
 
-        Debug.Log($"🎨 Selected Texture: {selectedTexture.name}");
-
-        // Remove the Sprite creation as it's not needed for RawImage
         if (isForecast)
         {
             RawImage targetIcon = null;
-            string dayText = "";
-
             switch (forecastDay)
             {
                 case 1:
                     targetIcon = forecastDay1Icon;
-                    dayText = "Day 1";
                     break;
                 case 2:
                     targetIcon = forecastDay2Icon;
-                    dayText = "Day 2";
                     break;
                 case 3:
                     targetIcon = forecastDay3Icon;
-                    dayText = "Day 3";
                     break;
-                default:
-                    Debug.LogError($"❌ Invalid forecast day: {forecastDay}");
-                    return;
             }
 
             if (targetIcon != null)
             {
-                // Make sure the RawImage component is active and visible
-                if (!targetIcon.gameObject.activeInHierarchy)
-                {
-                    Debug.LogWarning($"⚠️ Forecast {dayText} GameObject is inactive!");
-                    targetIcon.gameObject.SetActive(true);
-                }
-
                 targetIcon.texture = selectedTexture;
-                
-                // Ensure the RawImage has proper settings
                 targetIcon.enabled = true;
-                
-                // Set proper size if needed
                 targetIcon.SetNativeSize();
-
-                Debug.Log($"📅 Forecast {dayText} icon set to {selectedTexture.name}");
-            }
-            else
-            {
-                Debug.LogError($"❌ Forecast {dayText} RawImage component is NULL!");
             }
         }
         else
@@ -209,14 +145,28 @@ public class WeatherEffectsManager : MonoBehaviour
                 currentWeatherIcon.texture = selectedTexture;
                 currentWeatherIcon.enabled = true;
                 currentWeatherIcon.SetNativeSize();
-                Debug.Log($"☀️ Current weather icon set to {selectedTexture.name}");
-            }
-            else
-            {
-                Debug.LogError("❌ currentWeatherIcon is NULL!");
             }
         }
     }
+
+    private Texture2D DetermineWeatherTexture(string weatherDescription)
+    {
+        if (weatherDescription.Contains("clear"))
+            return sunIcon;
+        if (weatherDescription.Contains("cloud"))
+            return cloudIcon;
+        if (weatherDescription.Contains("rain") || weatherDescription.Contains("drizzle"))
+            return rainIcon;
+        if (weatherDescription.Contains("snow"))
+            return snowIcon;
+        if (weatherDescription.Contains("thunderstorm"))
+            return thunderIcon;
+        if (weatherDescription.Contains("fog") || weatherDescription.Contains("mist") || weatherDescription.Contains("haze"))
+            return fogIcon;
+            
+        return cloudIcon; // default fallback
+    }
+
     float GetRainIntensity(string description)
     {
         if (description.Contains("light") || description.Contains("drizzle"))
@@ -258,30 +208,48 @@ public class WeatherEffectsManager : MonoBehaviour
         if (rainParticles)
         {
             rainParticles.gameObject.SetActive(true);
-            rainEmission.rateOverTime = intensity;
-            rainMain.startSpeed = 8f + windSpeed;
+            var emission = rainParticles.emission;
+            emission.rateOverTime = intensity;
+            var main = rainParticles.main;
+            main.startSpeed = 8f + windSpeed;
+
+            // Apply wind direction to rain
             rainParticles.transform.rotation = Quaternion.LookRotation(windDirection);
+            
+            // Add slight downward tilt
+            Vector3 currentRotation = rainParticles.transform.rotation.eulerAngles;
+            rainParticles.transform.rotation = Quaternion.Euler(15f, currentRotation.y, currentRotation.z);
         }
     }
-    
+
     void EnableSnow(float intensity, float windSpeed, Vector3 windDirection)
     {
         if (snowParticles)
         {
             snowParticles.gameObject.SetActive(true);
-            snowEmission.rateOverTime = intensity;
-            snowMain.startSpeed = 2f + windSpeed;
+            var emission = snowParticles.emission;
+            emission.rateOverTime = intensity;
+            var main = snowParticles.main;
+            main.startSpeed = 2f + windSpeed;
+
+            // Apply wind direction to snow
             snowParticles.transform.rotation = Quaternion.LookRotation(windDirection);
+            
+            // Add slight downward tilt
+            Vector3 currentRotation = snowParticles.transform.rotation.eulerAngles;
+            snowParticles.transform.rotation = Quaternion.Euler(15f, currentRotation.y, currentRotation.z);
         }
     }
-    
+
     void EnableClouds(float intensity, float windSpeed, Vector3 windDirection)
     {
         if (cloudParticles && intensity > 0)
         {
             cloudParticles.gameObject.SetActive(true);
-            cloudEmission.rateOverTime = intensity;
-            cloudMain.startSpeed = windSpeed;
+            var emission = cloudParticles.emission;
+            emission.rateOverTime = intensity;
+            
+            // Apply wind direction to clouds
             cloudParticles.transform.rotation = Quaternion.LookRotation(windDirection);
         }
     }
@@ -307,8 +275,10 @@ public class WeatherEffectsManager : MonoBehaviour
         if (windParticles)
         {
             windParticles.gameObject.SetActive(true);
-            windEmission.rateOverTime = windSpeed;
-            windMain.startSpeed = windSpeed;
+            var main = windParticles.main;
+            main.startSpeed = windSpeed;
+            
+            // Apply wind direction
             windParticles.transform.rotation = Quaternion.LookRotation(windDirection);
         }
     }
