@@ -11,12 +11,15 @@ public class RealWorldWeather : MonoBehaviour
     public string city = "Paris";
     public float updateInterval = 600f;
     private float timer = 0f;
+    private bool isLoading = false;
 
     [Header("UI Elements")]
+    public TMP_InputField cityInputField; // Add reference to input field
     public TextMeshProUGUI currentWeatherText;
     public TextMeshProUGUI forecastDay1Text;
     public TextMeshProUGUI forecastDay2Text;
     public TextMeshProUGUI forecastDay3Text;
+    public TextMeshProUGUI errorText;
 
     [System.Serializable]
     public class ForecastData
@@ -30,36 +33,123 @@ public class RealWorldWeather : MonoBehaviour
 
     void Start()
     {
+        if (errorText != null)
+        {
+            errorText.gameObject.SetActive(false);
+        }
+
+        // Setup input field
+        if (cityInputField != null)
+        {
+            cityInputField.text = city; // Set initial city
+            cityInputField.onSubmit.AddListener(OnCityInputSubmit);
+        }
+        else
+        {
+            Debug.LogError("City Input Field not assigned!");
+        }
+
         GetRealWeather();
         GetForecast();
     }
 
     void Update()
     {
-        timer += Time.deltaTime;
-        if (timer >= updateInterval)
+        if (!isLoading)
         {
-            GetRealWeather();
-            GetForecast();
-            timer = 0f;
+            timer += Time.deltaTime;
+            if (timer >= updateInterval)
+            {
+                GetRealWeather();
+                GetForecast();
+                timer = 0f;
+            }
+        }
+
+        // Check for Enter key when input field is focused
+        if (cityInputField != null && cityInputField.isFocused && Input.GetKeyDown(KeyCode.Return))
+        {
+            OnCityInputSubmit(cityInputField.text);
         }
     }
 
-    // Fetch the real-time weather data
+    // Method to handle input field submission
+    private void OnCityInputSubmit(string newCity)
+    {
+        if (string.IsNullOrEmpty(newCity))
+        {
+            ShowError("Please enter a valid city name.");
+            return;
+        }
+
+        UpdateCity(newCity);
+        cityInputField.DeactivateInputField(); // Remove focus from input field
+    }
+
+    public void UpdateCity(string newCity)
+    {
+        if (string.IsNullOrEmpty(newCity))
+        {
+            ShowError("Please enter a valid city name.");
+            return;
+        }
+
+        city = newCity;
+        timer = updateInterval; // Reset timer to trigger immediate update
+        
+        // Show loading state
+        isLoading = true;
+        if (currentWeatherText) 
+            currentWeatherText.text = $"Loading weather for {city}...";
+        
+        if (forecastDay1Text) forecastDay1Text.text = "Loading...";
+        if (forecastDay2Text) forecastDay2Text.text = "Loading...";
+        if (forecastDay3Text) forecastDay3Text.text = "Loading...";
+        
+        if (errorText != null)
+        {
+            errorText.gameObject.SetActive(false);
+        }
+
+        GetRealWeather();
+        GetForecast();
+    }
+
+    private void ShowError(string message)
+    {
+        if (errorText != null)
+        {
+            errorText.text = message;
+            errorText.gameObject.SetActive(true);
+            StartCoroutine(HideErrorAfterDelay(5f));
+        }
+        else
+        {
+            Debug.LogError(message);
+        }
+    }
+
+    private IEnumerator HideErrorAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (errorText != null)
+        {
+            errorText.gameObject.SetActive(false);
+        }
+    }
+
     public void GetRealWeather()
     {
         string uri = $"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={apiKey}&units=metric&lang=en";
         StartCoroutine(GetWeatherCoroutine(uri));
     }
 
-    // Fetch the forecast data
     public void GetForecast()
     {
         string uri = $"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={apiKey}&units=metric&lang=en";
         StartCoroutine(GetForecastCoroutine(uri));
     }
 
-    // Coroutine to get the current weather
     IEnumerator GetWeatherCoroutine(string uri)
     {
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
@@ -69,17 +159,27 @@ public class RealWorldWeather : MonoBehaviour
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
-                Debug.LogError($"Web request error: {webRequest.error}");
+                ShowError($"Weather API Error: {webRequest.error}");
+                isLoading = false;
             }
             else
             {
-                Debug.Log($"Weather API Response: {webRequest.downloadHandler.text}");
-                ParseCurrentWeather(webRequest.downloadHandler.text); // Handle current weather response
+                try
+                {
+                    ParseCurrentWeather(webRequest.downloadHandler.text);
+                }
+                catch (Exception e)
+                {
+                    ShowError($"Error processing weather data: {e.Message}");
+                }
+                finally
+                {
+                    isLoading = false;
+                }
             }
         }
     }
 
-    // Coroutine to get the weather forecast
     IEnumerator GetForecastCoroutine(string uri)
     {
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
@@ -89,61 +189,85 @@ public class RealWorldWeather : MonoBehaviour
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
-                Debug.LogError($"Forecast request error: {webRequest.error}");
+                ShowError($"Forecast API Error: {webRequest.error}");
+                isLoading = false;
             }
             else
             {
-                Debug.Log($"Forecast API Response: {webRequest.downloadHandler.text}");
-                ParseForecastData(webRequest.downloadHandler.text); // Handle forecast response
+                try
+                {
+                    ParseForecastData(webRequest.downloadHandler.text);
+                }
+                catch (Exception e)
+                {
+                    ShowError($"Error processing forecast data: {e.Message}");
+                }
+                finally
+                {
+                    isLoading = false;
+                }
             }
         }
     }
 
-
-    // Parse the current weather data and update particle effects
     void ParseCurrentWeather(string json)
     {
         try
         {
             JObject jsonObject = JObject.Parse(json);
+            
+            // Check for API error response
+            if (jsonObject["cod"]?.Value<int>() != 200)
+            {
+                string errorMessage = jsonObject["message"]?.Value<string>() ?? "Unknown error";
+                ShowError($"Weather API Error: {errorMessage}");
+                return;
+            }
+
             string description = jsonObject["weather"]?[0]?["description"]?.Value<string>();
-            string iconCode = jsonObject["weather"]?[0]?["icon"]?.Value<string>();  // Get icon code
+            string iconCode = jsonObject["weather"]?[0]?["icon"]?.Value<string>();
             float tempCelsius = jsonObject["main"]?["temp"]?.Value<float>() ?? 0f;
             float windSpeed = jsonObject["wind"]?["speed"]?.Value<float>() ?? 0f;
             float windDegrees = jsonObject["wind"]?["deg"]?.Value<float>() ?? 0f;
 
             string windDirection = GetWindDirection(windDegrees);
 
-            // Display the current weather info in the UI, including the city name and wind direction
             if (currentWeatherText)
             {
                 currentWeatherText.text = $"City: {city}\nCurrent Weather:\n{description}\nTemp: {tempCelsius:F1}°C\nWind: {windSpeed:F1} m/s, {windDirection}";
             }
 
-            // ONLY pass the necessary info to the WeatherEffectsManager to handle particle effects and icon
             WeatherEffectsManager weatherEffectsManager = FindFirstObjectByType<WeatherEffectsManager>();
             if (weatherEffectsManager != null)
             {
-                weatherEffectsManager.UpdateWeatherEffects(description, windSpeed, windDegrees, tempCelsius);  // Update weather effects (including the icon) in WeatherEffectsManager
+                weatherEffectsManager.UpdateWeatherEffects(description, windSpeed, windDegrees, tempCelsius);
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"Error parsing weather data: {e.Message}");
+            ShowError($"Error parsing weather data: {e.Message}");
         }
     }
 
-        // Parse and display the forecast data for the next 3 days
-        void ParseForecastData(string json)
+    void ParseForecastData(string json)
     {
         try
         {
             JObject jsonObject = JObject.Parse(json);
+            
+            // Check for API error response
+            if (jsonObject["cod"]?.Value<string>() != "200")
+            {
+                string errorMessage = jsonObject["message"]?.Value<string>() ?? "Unknown error";
+                ShowError($"Forecast API Error: {errorMessage}");
+                return;
+            }
+
             var forecastList = jsonObject["list"];
 
             if (forecastList == null)
             {
-                Debug.LogError("⚠️ No 'list' field found in forecast JSON!");
+                ShowError("No forecast data available");
                 return;
             }
 
@@ -154,7 +278,6 @@ public class RealWorldWeather : MonoBehaviour
             {
                 DateTime forecastTime = DateTime.Parse(item["dt_txt"]?.Value<string>());
                 
-                // Pick forecasts at 12:00 PM for accuracy
                 if (forecastTime.Hour == 12)
                 {
                     string forecastDescription = item["weather"]?[0]?["description"]?.Value<string>();
@@ -165,7 +288,6 @@ public class RealWorldWeather : MonoBehaviour
                     string windDirection = GetWindDirection(forecastWindDegrees);
                     string forecastText = $"Day {forecastDaysFound + 1}:\n{forecastDescription}\nTemp: {forecastTemp:F1}°C\nWind: {forecastWindSpeed:F1} m/s, {windDirection}";
 
-                    // Update UI text
                     switch (forecastDaysFound)
                     {
                         case 0:
@@ -179,7 +301,6 @@ public class RealWorldWeather : MonoBehaviour
                             break;
                     }
 
-                    // Update weather icons for forecast
                     if (weatherEffectsManager != null)
                     {
                         weatherEffectsManager.UpdateWeatherEffects(
@@ -187,8 +308,8 @@ public class RealWorldWeather : MonoBehaviour
                             forecastWindSpeed,
                             forecastWindDegrees,
                             forecastTemp,
-                            true,  // isForecast = true
-                            forecastDaysFound + 1  // forecastDay (1-based)
+                            true,
+                            forecastDaysFound + 1
                         );
                     }
 
@@ -199,23 +320,21 @@ public class RealWorldWeather : MonoBehaviour
 
             if (forecastDaysFound == 0)
             {
-                Debug.LogError("⚠️ No valid forecast entries found at 12:00 PM.");
+                ShowError("No forecast data available for the next days");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"❌ Error parsing forecast data: {e.Message}");
+            ShowError($"Error parsing forecast data: {e.Message}");
         }
     }
-    
 
-    // Convert wind degrees to cardinal directions (e.g., 0° = North, 90° = East)
     string GetWindDirection(float degrees)
     {
         if (degrees >= 0 && degrees < 45) return "North";
         if (degrees >= 45 && degrees < 135) return "East";
         if (degrees >= 135 && degrees < 225) return "South";
         if (degrees >= 225 && degrees < 315) return "West";
-        return "North"; // Default case
+        return "North";
     }
 }
