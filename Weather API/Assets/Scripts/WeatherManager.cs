@@ -12,6 +12,23 @@ public class WeatherEffectsManager : MonoBehaviour
     public ParticleSystem thunderParticles;
     public ParticleSystem windParticles;
 
+    [Header("Scene Lighting")]
+    public Light directionalLight; // Reference to main directional light
+
+    [Header("Lighting Settings")]
+    [Range(0f, 1f)] public float clearSkyLightIntensity = 1.0f;
+    [Range(0f, 1f)] public float cloudyLightIntensity = 0.7f;
+    [Range(0f, 1f)] public float rainyLightIntensity = 0.5f;
+    [Range(0f, 1f)] public float stormLightIntensity = 0.3f;
+    [Range(0f, 1f)] public float foggyLightIntensity = 0.4f;
+    [Range(0f, 1f)] public float nightLightIntensity = 0.1f;
+    public Color clearSkyLightColor = new Color(1f, 0.95f, 0.85f); // Warm sunlight
+    public Color cloudyLightColor = new Color(0.8f, 0.8f, 0.8f); // Grayish
+    public Color rainyLightColor = new Color(0.7f, 0.7f, 0.8f); // Slightly blue
+    public Color stormLightColor = new Color(0.4f, 0.4f, 0.5f); // Dark blue-gray
+    public Color foggyLightColor = new Color(0.8f, 0.8f, 0.7f); // Yellowish gray
+    public Color nightLightColor = new Color(0.2f, 0.2f, 0.4f); // Dark blue
+
     [Header("Weather UI Elements")]
     public RawImage currentWeatherIcon;
     public RawImage forecastDay1Icon;
@@ -39,12 +56,13 @@ public class WeatherEffectsManager : MonoBehaviour
     [Header("Cloud Coverage Settings")]
     [Range(0f, 100f)] public float fewCloudsEmission = 20f;
     [Range(0f, 100f)] public float scatteredCloudsEmission = 40f;
-    [Range(0f, 100f)] public float brokenCloudsEmission = 60f;
-    [Range(0f, 100f)] public float overcastCloudsEmission = 80f;
+    [Range(0f, 100f)] public float brokenCloudsEmission = 80f;
+    [Range(0f, 200f)] public float overcastCloudsEmission = 200f;
 
     private void Start()
     {
         ValidateIconReferences();
+        ValidateLightReference();
         DisableAllWeatherEffects();
     }
 
@@ -56,13 +74,28 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
 
+    private void ValidateLightReference()
+    {
+        if (directionalLight == null)
+        {
+            Debug.LogWarning("Directional light reference is missing. Please assign it in the Inspector.");
+            // Try to find the main directional light if not assigned
+            Light[] lights = FindObjectsByType<Light>(FindObjectsSortMode.None);
+            foreach (Light light in lights)
+            {
+                if (light.type == LightType.Directional)
+                {
+                    directionalLight = light;
+                    Debug.Log("Found directional light automatically: " + light.name);
+                    break;
+                }
+            }
+        }
+    }
+
     public void UpdateWeatherEffects(string weatherDescription, float windSpeed, float windDegrees, float temperature, bool isForecast = false, int forecastDay = 0)
     {
         // Convert meteorological wind degrees to Unity direction
-        // Meteorological wind degrees: 0/360° = North (wind FROM North), 90° = East, 180° = South, 270° = West
-        // We need to:
-        // 1. Add 180° to get the direction the wind is blowing TOWARDS
-        // 2. Convert to Unity's coordinate system
         float unityWindDegrees = (windDegrees + 180f) % 360f;
         Vector3 windDirection = Quaternion.Euler(0, -unityWindDegrees, 0) * Vector3.forward;
         
@@ -71,10 +104,13 @@ public class WeatherEffectsManager : MonoBehaviour
         // Set the weather icon for either current weather or forecast
         SetWeatherIcon(weatherDescription, isForecast, forecastDay);
 
-        // Only apply particle effects for current weather (not forecast)
+        // Only apply particle effects and lighting for current weather (not forecast)
         if (!isForecast)
         {
             DisableAllWeatherEffects();
+
+            // Update directional light based on weather
+            UpdateDirectionalLight(weatherDescription, temperature);
 
             // Prioritize snow first before rain or cloud
             if (weatherDescription.Contains("snow"))
@@ -105,8 +141,99 @@ public class WeatherEffectsManager : MonoBehaviour
         }
     }
 
+    private void UpdateDirectionalLight(string weatherDescription, float temperature)
+    {
+        if (directionalLight == null) return;
+
+        // Adjust light intensity based on weather conditions
+        float intensity = clearSkyLightIntensity;
+        Color lightColor = clearSkyLightColor;
+
+        // Determine time of day (this is simplified - you might want to get actual time data)
+        bool isNight = IsNightTime();
+
+        if (isNight)
+        {
+            intensity = nightLightIntensity;
+            lightColor = nightLightColor;
+        }
+        else
+        {
+            if (weatherDescription.Contains("thunderstorm"))
+            {
+                intensity = stormLightIntensity;
+                lightColor = stormLightColor;
+            }
+            else if (weatherDescription.Contains("rain") || weatherDescription.Contains("drizzle"))
+            {
+                intensity = rainyLightIntensity;
+                lightColor = rainyLightColor;
+            }
+            else if (weatherDescription.Contains("snow"))
+            {
+                // Snow can be bright due to reflection
+                intensity = cloudyLightIntensity;
+                lightColor = cloudyLightColor;
+            }
+            else if (weatherDescription.Contains("fog") || weatherDescription.Contains("mist") || weatherDescription.Contains("haze"))
+            {
+                intensity = foggyLightIntensity;
+                lightColor = foggyLightColor;
+            }
+            else if (weatherDescription.Contains("cloud"))
+            {
+                // Adjust intensity based on cloud coverage
+                if (weatherDescription.Contains("few"))
+                    intensity = clearSkyLightIntensity * 0.9f;
+                else if (weatherDescription.Contains("scattered"))
+                    intensity = clearSkyLightIntensity * 0.8f;
+                else if (weatherDescription.Contains("broken"))
+                    intensity = cloudyLightIntensity;
+                else if (weatherDescription.Contains("overcast"))
+                    intensity = cloudyLightIntensity * 0.8f;
+                else
+                    intensity = cloudyLightIntensity;
+                
+                lightColor = cloudyLightColor;
+            }
+        }
+
+        // Apply the changes
+        directionalLight.intensity = intensity;
+        directionalLight.color = lightColor;
+
+        // Adjust light direction based on time of day (optional)
+        if (isNight)
+        {
+            // Moon position (opposite to the sun)
+            directionalLight.transform.rotation = Quaternion.Euler(320, 30, 0);
+        }
+        else
+        {
+            // Sun position (typical daytime)
+            directionalLight.transform.rotation = Quaternion.Euler(50, 30, 0);
+        }
+    }
+
+    private bool IsNightTime()
+    {
+        // This is a placeholder. You could:
+        // 1. Use the actual time from the API if available
+        // 2. Use System.DateTime.Now for the local time
+        // 3. Or use a simple day/night cycle in your game
+        
+        // For demonstration, let's use a simple check
+        // Assuming this is connected to RealWorldWeather script
+        // which might have time data from the API
+        
+        // Simple implementation (using current system time)
+        int hour = System.DateTime.Now.Hour;
+        return hour < 6 || hour > 18;
+    }
+
     private void SetWeatherIcon(string weatherDescription, bool isForecast, int forecastDay)
     {
+        // Same as original implementation
         Texture2D selectedTexture = DetermineWeatherTexture(weatherDescription);
 
         if (selectedTexture == null)
@@ -151,6 +278,7 @@ public class WeatherEffectsManager : MonoBehaviour
 
     private Texture2D DetermineWeatherTexture(string weatherDescription)
     {
+        // Same as original implementation
         if (weatherDescription.Contains("clear"))
             return sunIcon;
         if (weatherDescription.Contains("cloud"))
@@ -169,6 +297,7 @@ public class WeatherEffectsManager : MonoBehaviour
 
     float GetRainIntensity(string description)
     {
+        // Same as original implementation
         if (description.Contains("light") || description.Contains("drizzle"))
             return lightRainEmission;
         else if (description.Contains("heavy") || description.Contains("extreme") || description.Contains("intensity"))
@@ -179,6 +308,7 @@ public class WeatherEffectsManager : MonoBehaviour
 
     float GetSnowIntensity(string description)
     {
+        // Same as original implementation
         if (description.Contains("light"))
             return lightSnowEmission;
         else if (description.Contains("heavy"))
@@ -189,6 +319,7 @@ public class WeatherEffectsManager : MonoBehaviour
 
     float GetCloudIntensity(string description)
     {
+        // Same as original implementation
         if (description.Contains("clear"))
             return 0f;
         else if (description.Contains("few"))
@@ -203,6 +334,7 @@ public class WeatherEffectsManager : MonoBehaviour
             return scatteredCloudsEmission;
     }
 
+    // The following methods remain the same as the original implementation
     void EnableRain(float intensity, float windSpeed, Vector3 windDirection)
     {
         if (rainParticles)

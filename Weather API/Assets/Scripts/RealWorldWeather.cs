@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -14,12 +15,22 @@ public class RealWorldWeather : MonoBehaviour
     private bool isLoading = false;
 
     [Header("UI Elements")]
-    public TMP_InputField cityInputField; // Add reference to input field
+    public TMP_InputField cityInputField;
     public TextMeshProUGUI currentWeatherText;
     public TextMeshProUGUI forecastDay1Text;
     public TextMeshProUGUI forecastDay2Text;
     public TextMeshProUGUI forecastDay3Text;
     public TextMeshProUGUI errorText;
+    
+    [Header("Performance Tracking")]
+    public bool logPerformanceToConsole = true;
+    public bool logDetailedPerformance = true;  // Set to true for more detailed logs
+    
+    // Performance tracking variables
+    private Stopwatch apiCallStopwatch = new Stopwatch();
+    private int apiCallCount = 0;
+    private long totalApiTime = 0;
+    private long maxApiTime = 0;
 
     [System.Serializable]
     public class ForecastData
@@ -46,7 +57,7 @@ public class RealWorldWeather : MonoBehaviour
         }
         else
         {
-            Debug.LogError("City Input Field not assigned!");
+            UnityEngine.Debug.LogError("City Input Field not assigned!");
         }
 
         GetRealWeather();
@@ -125,7 +136,7 @@ public class RealWorldWeather : MonoBehaviour
         }
         else
         {
-            Debug.LogError(message);
+            UnityEngine.Debug.LogError(message);
         }
     }
 
@@ -152,25 +163,60 @@ public class RealWorldWeather : MonoBehaviour
 
     IEnumerator GetWeatherCoroutine(string uri)
     {
+        // Start frame tracking
+        int startFrame = Time.frameCount;
+        float startTime = Time.realtimeSinceStartup;
+        
+        // Start total API call timer
+        apiCallStopwatch.Reset();
+        apiCallStopwatch.Start();
+        long networkStartTime = apiCallStopwatch.ElapsedMilliseconds;
+        
+        // Log API call start
+        if (logPerformanceToConsole && logDetailedPerformance)
+        {
+            UnityEngine.Debug.Log($"[API Call Started] Weather API at frame {startFrame}");
+        }
+        
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
         {
             yield return webRequest.SendWebRequest();
+            
+            // Calculate network time
+            long networkTime = apiCallStopwatch.ElapsedMilliseconds - networkStartTime;
+            long parsingStartTime = apiCallStopwatch.ElapsedMilliseconds;
 
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
                 ShowError($"Weather API Error: {webRequest.error}");
                 isLoading = false;
+                
+                // Log failed request performance
+                apiCallStopwatch.Stop();
+                LogPerformance("Weather API (Failed)", apiCallStopwatch.ElapsedMilliseconds, networkTime, 0, startFrame);
             }
             else
             {
                 try
                 {
                     ParseCurrentWeather(webRequest.downloadHandler.text);
+                    
+                    // Calculate parsing time
+                    long parsingTime = apiCallStopwatch.ElapsedMilliseconds - parsingStartTime;
+                    
+                    // Stop timer and record performance data
+                    apiCallStopwatch.Stop();
+                    LogPerformance("Weather API", apiCallStopwatch.ElapsedMilliseconds, networkTime, parsingTime, startFrame);
                 }
                 catch (Exception e)
                 {
                     ShowError($"Error processing weather data: {e.Message}");
+                    
+                    // Log error performance
+                    apiCallStopwatch.Stop();
+                    LogPerformance("Weather API (Error)", apiCallStopwatch.ElapsedMilliseconds, networkTime, 
+                        apiCallStopwatch.ElapsedMilliseconds - parsingStartTime, startFrame);
                 }
                 finally
                 {
@@ -182,30 +228,109 @@ public class RealWorldWeather : MonoBehaviour
 
     IEnumerator GetForecastCoroutine(string uri)
     {
+        // Start frame tracking
+        int startFrame = Time.frameCount;
+        float startTime = Time.realtimeSinceStartup;
+        
+        // Start total API call timer
+        apiCallStopwatch.Reset();
+        apiCallStopwatch.Start();
+        long networkStartTime = apiCallStopwatch.ElapsedMilliseconds;
+        
+        // Log API call start
+        if (logPerformanceToConsole && logDetailedPerformance)
+        {
+            UnityEngine.Debug.Log($"[API Call Started] Forecast API at frame {startFrame}");
+        }
+        
         using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
         {
             yield return webRequest.SendWebRequest();
+            
+            // Calculate network time
+            long networkTime = apiCallStopwatch.ElapsedMilliseconds - networkStartTime;
+            long parsingStartTime = apiCallStopwatch.ElapsedMilliseconds;
 
             if (webRequest.result == UnityWebRequest.Result.ConnectionError ||
                 webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
                 ShowError($"Forecast API Error: {webRequest.error}");
                 isLoading = false;
+                
+                // Log failed request performance
+                apiCallStopwatch.Stop();
+                LogPerformance("Forecast API (Failed)", apiCallStopwatch.ElapsedMilliseconds, networkTime, 0, startFrame);
             }
             else
             {
                 try
                 {
                     ParseForecastData(webRequest.downloadHandler.text);
+                    
+                    // Calculate parsing time
+                    long parsingTime = apiCallStopwatch.ElapsedMilliseconds - parsingStartTime;
+                    
+                    // Stop timer and record performance data
+                    apiCallStopwatch.Stop();
+                    LogPerformance("Forecast API", apiCallStopwatch.ElapsedMilliseconds, networkTime, parsingTime, startFrame);
                 }
                 catch (Exception e)
                 {
                     ShowError($"Error processing forecast data: {e.Message}");
+                    
+                    // Log error performance
+                    apiCallStopwatch.Stop();
+                    LogPerformance("Forecast API (Error)", apiCallStopwatch.ElapsedMilliseconds, networkTime, 
+                        apiCallStopwatch.ElapsedMilliseconds - parsingStartTime, startFrame);
                 }
                 finally
                 {
                     isLoading = false;
                 }
+            }
+        }
+    }
+    
+    // Log performance metrics to console
+    private void LogPerformance(string endpoint, long totalTime, long networkTime, long parsingTime, int startFrame)
+    {
+        // Update statistics
+        apiCallCount++;
+        totalApiTime += totalTime;
+        maxApiTime = Math.Max(maxApiTime, totalTime);
+        
+        int endFrame = Time.frameCount;
+        int frameSpan = endFrame - startFrame;
+        
+        // Log to console if enabled
+        if (logPerformanceToConsole)
+        {
+            // Basic performance log
+            UnityEngine.Debug.Log($"[API Performance] {endpoint}: Total={totalTime}ms, Network={networkTime}ms, Parsing={parsingTime}ms, Frames={frameSpan}");
+            
+            // Detailed performance statistics if enabled
+            if (logDetailedPerformance)
+            {
+                UnityEngine.Debug.Log($"[API Stats] Call #{apiCallCount}, Avg={totalApiTime/apiCallCount}ms, Max={maxApiTime}ms");
+                
+                // Frame rate impact analysis
+                if (frameSpan > 0)
+                {
+                    float msPerFrame = totalTime / (float)frameSpan;
+                    UnityEngine.Debug.Log($"[Frame Impact] Approx {msPerFrame:F2}ms per frame during API call");
+                }
+            }
+            
+            // Log warning if performance is poor (over 500ms)
+            if (totalTime > 500)
+            {
+                UnityEngine.Debug.LogWarning($"[API Performance Warning] {endpoint} call took {totalTime}ms, spanning {frameSpan} frames");
+            }
+            
+            // Log error if performance is terrible (over 2 seconds)
+            if (totalTime > 2000)
+            {
+                UnityEngine.Debug.LogError($"[API Performance Critical] {endpoint} call took {totalTime}ms, which will cause significant frame rate drops");
             }
         }
     }
