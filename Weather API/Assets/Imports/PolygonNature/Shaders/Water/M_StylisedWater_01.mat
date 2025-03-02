@@ -55,14 +55,14 @@ Material:
     - _FoamCutOff: 0.92
     - _FoamGradientScale: 1.6
     - _FoamScale: 200
-    - _FoamSpeed: 0.5
-    - _GradientScale: 3.55
+    - _FoamSpeed: 0.1
+    - _GradientScale: 0.62
     - _QueueControl: 0
     - _QueueOffset: 0
-    - _RefractionScale: 3.45
+    - _RefractionScale: 4.74
     - _RefractionSpeed: 0.05
-    - _RefractionStrenght: 2
-    - _WaterDepth01: 10.3
+    - _RefractionStrenght: 21.62
+    - _WaterDepth01: 8.96
     m_Colors:
     - _DeepWater: {r: 0, g: 0.12163555, b: 0.8207547, a: 0.19607843}
     - _FoamColor: {r: 1, g: 1, b: 1, a: 0.73333335}
