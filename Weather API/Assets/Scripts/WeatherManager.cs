@@ -217,16 +217,7 @@ public class WeatherEffectsManager : MonoBehaviour
 
     private bool IsNightTime()
     {
-        // This is a placeholder. You could:
-        // 1. Use the actual time from the API if available
-        // 2. Use System.DateTime.Now for the local time
-        // 3. Or use a simple day/night cycle in your game
-        
-        // For demonstration, let's use a simple check
-        // Assuming this is connected to RealWorldWeather script
-        // which might have time data from the API
-        
-        // Simple implementation (using current system time)
+    
         int hour = System.DateTime.Now.Hour;
         return hour < 6 || hour > 18;
     }
