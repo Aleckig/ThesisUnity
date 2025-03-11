@@ -298,21 +298,24 @@ public class RealWorldWeather : MonoBehaviour
         apiCallCount++;
         totalApiTime += totalTime;
         maxApiTime = Math.Max(maxApiTime, totalTime);
-        
+
         int endFrame = Time.frameCount;
         int frameSpan = endFrame - startFrame;
-        
+
+        // Log API response time separately
+        UnityEngine.Debug.Log($"[API Response Time] {endpoint}: {networkTime}ms");
+
         // Log to console if enabled
         if (logPerformanceToConsole)
         {
             // Basic performance log
             UnityEngine.Debug.Log($"[API Performance] {endpoint}: Total={totalTime}ms, Network={networkTime}ms, Parsing={parsingTime}ms, Frames={frameSpan}");
-            
+
             // Detailed performance statistics if enabled
             if (logDetailedPerformance)
             {
-                UnityEngine.Debug.Log($"[API Stats] Call #{apiCallCount}, Avg={totalApiTime/apiCallCount}ms, Max={maxApiTime}ms");
-                
+                UnityEngine.Debug.Log($"[API Stats] Call #{apiCallCount}, Avg={totalApiTime / apiCallCount}ms, Max={maxApiTime}ms");
+
                 // Frame rate impact analysis
                 if (frameSpan > 0)
                 {
@@ -320,13 +323,13 @@ public class RealWorldWeather : MonoBehaviour
                     UnityEngine.Debug.Log($"[Frame Impact] Approx {msPerFrame:F2}ms per frame during API call");
                 }
             }
-            
+
             // Log warning if performance is poor (over 500ms)
             if (totalTime > 500)
             {
                 UnityEngine.Debug.LogWarning($"[API Performance Warning] {endpoint} call took {totalTime}ms, spanning {frameSpan} frames");
             }
-            
+
             // Log error if performance is terrible (over 2 seconds)
             if (totalTime > 2000)
             {
